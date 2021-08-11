@@ -1,4 +1,4 @@
-# Copyright 2019 The TensorFlow Authors. All Rights Reserved.
+# Copyright 2021 The TensorFlow Authors. All Rights Reserved.
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -11,22 +11,19 @@
 # WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 # See the License for the specific language governing permissions and
 # limitations under the License.
-# ==============================================================================
-"""Binary to generate training/evaluation dataset for NCF model."""
 
-from __future__ import absolute_import
-from __future__ import division
-from __future__ import print_function
+"""Binary to generate training/evaluation dataset for NCF model."""
 
 import json
 
 # pylint: disable=g-bad-import-order
+# Import libraries
 from absl import app
 from absl import flags
-import tensorflow.compat.v2 as tf
+import tensorflow as tf
 # pylint: enable=g-bad-import-order
 
-from official.datasets import movielens
+from official.recommendation import movielens
 from official.recommendation import data_preprocessing
 
 flags.DEFINE_string(
@@ -65,8 +62,8 @@ def prepare_raw_data(flag_obj):
 
   data_processing_params = {
       "train_epochs": flag_obj.num_train_epochs,
-      "batch_size": flag_obj.prebatch_size,
-      "eval_batch_size": flag_obj.prebatch_size,
+      "batch_size": flag_obj.train_prebatch_size,
+      "eval_batch_size": flag_obj.eval_prebatch_size,
       "batches_per_step": 1,
       "stream_files": True,
       "num_neg": flag_obj.num_negative_samples,
