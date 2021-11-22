@@ -23,7 +23,6 @@ from official.modeling import tf_utils
 from official.vision.beta.projects.deepmac_maskrcnn.modeling.heads import hourglass_network
 
 
-@tf.keras.utils.register_keras_serializable(package='Vision')
 class DeepMaskHead(tf.keras.layers.Layer):
   """Creates a mask head."""
 
@@ -209,8 +208,10 @@ class DeepMaskHead(tf.keras.layers.Layer):
          roi_width * upsample_factor], representing the mask predictions.
     """
     roi_features, roi_classes = inputs
+    features_shape = tf.shape(roi_features)
     batch_size, num_rois, height, width, filters = (
-        roi_features.get_shape().as_list())
+        features_shape[0], features_shape[1], features_shape[2],
+        features_shape[3], features_shape[4])
     if batch_size is None:
       batch_size = tf.shape(roi_features)[0]
 

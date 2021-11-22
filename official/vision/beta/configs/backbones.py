@@ -14,10 +14,10 @@
 
 # Lint as: python3
 """Backbones configurations."""
+import dataclasses
 from typing import Optional, List
 
 # Import libraries
-import dataclasses
 
 from official.modeling import hyperparams
 
@@ -30,8 +30,10 @@ class ResNet(hyperparams.Config):
   stem_type: str = 'v0'
   se_ratio: float = 0.0
   stochastic_depth_drop_rate: float = 0.0
+  scale_stem: bool = True
   resnetd_shortcut: bool = False
   replace_stem_max_pool: bool = False
+  bn_trainable: bool = True
 
 
 @dataclasses.dataclass
@@ -60,6 +62,8 @@ class MobileNet(hyperparams.Config):
   model_id: str = 'MobileNetV2'
   filter_size_scale: float = 1.0
   stochastic_depth_drop_rate: float = 0.0
+  output_stride: Optional[int] = None
+  output_intermediate_endpoints: bool = False
 
 
 @dataclasses.dataclass
@@ -95,6 +99,13 @@ class RevNet(hyperparams.Config):
 
 
 @dataclasses.dataclass
+class MobileDet(hyperparams.Config):
+  """Mobiledet config."""
+  model_id: str = 'MobileDetCPU'
+  filter_size_scale: float = 1.0
+
+
+@dataclasses.dataclass
 class Backbone(hyperparams.OneOfConfig):
   """Configuration for backbones.
 
@@ -107,6 +118,7 @@ class Backbone(hyperparams.OneOfConfig):
     spinenet: spinenet backbone config.
     spinenet_mobile: mobile spinenet backbone config.
     mobilenet: mobilenet backbone config.
+    mobiledet: mobiledet backbone config.
   """
   type: Optional[str] = None
   resnet: ResNet = ResNet()
@@ -116,3 +128,5 @@ class Backbone(hyperparams.OneOfConfig):
   spinenet: SpineNet = SpineNet()
   spinenet_mobile: SpineNetMobile = SpineNetMobile()
   mobilenet: MobileNet = MobileNet()
+  mobiledet: MobileDet = MobileDet()
+

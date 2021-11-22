@@ -27,7 +27,6 @@ PROJECTION_OUTPUT_KEY = 'projection_outputs'
 SUPERVISED_OUTPUT_KEY = 'supervised_outputs'
 
 
-@tf.keras.utils.register_keras_serializable(package='simclr')
 class SimCLRModel(tf.keras.Model):
   """A classification model based on SimCLR framework."""
 
@@ -86,7 +85,8 @@ class SimCLRModel(tf.keras.Model):
       features = inputs
 
     # Base network forward pass.
-    endpoints = self._backbone(features, training=training)
+    endpoints = self._backbone(
+        features, training=training and self._backbone_trainable)
     features = endpoints[max(endpoints.keys())]
     projection_inputs = layers.GlobalAveragePooling2D()(features)
 
