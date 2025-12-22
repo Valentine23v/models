@@ -1,4 +1,4 @@
-# Copyright 2021 The TensorFlow Authors. All Rights Reserved.
+# Copyright 2025 The TensorFlow Authors. All Rights Reserved.
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -16,14 +16,12 @@
 
 import os
 
-# Import libraries
-
 from absl import logging
 import numpy as np
-import tensorflow as tf
+import tensorflow as tf, tf_keras
 
-from official.nlp.transformer import metrics as metrics_v2
-from official.nlp.transformer.utils import metrics
+from official.legacy.transformer import metrics as metrics_v2
+from official.legacy.transformer.utils import metrics
 from official.projects.nhnet import input_pipeline
 from official.projects.nhnet import models
 
@@ -135,10 +133,10 @@ def continuous_eval(strategy,
     return tf.nest.map_structure(strategy.experimental_local_results, outputs)
 
   metrics_and_funcs = [
-      (tf.keras.metrics.Mean("bleu", dtype=tf.float32), bleu_score),
-      (tf.keras.metrics.Mean("rouge_2_fscore",
+      (tf_keras.metrics.Mean("bleu", dtype=tf.float32), bleu_score),
+      (tf_keras.metrics.Mean("rouge_2_fscore",
                              dtype=tf.float32), rouge_2_fscore),
-      (tf.keras.metrics.Mean("rouge_l_fscore",
+      (tf_keras.metrics.Mean("rouge_l_fscore",
                              dtype=tf.float32), rouge_l_fscore),
   ]
   eval_results = {}

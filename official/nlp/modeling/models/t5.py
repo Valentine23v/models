@@ -1,4 +1,4 @@
-# Copyright 2021 The TensorFlow Authors. All Rights Reserved.
+# Copyright 2025 The TensorFlow Authors. All Rights Reserved.
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -28,7 +28,7 @@ import math
 from typing import Callable, Dict, Optional, Sequence, Text, Union
 
 import numpy as np
-import tensorflow as tf
+import tensorflow as tf, tf_keras
 
 from official.modeling import tf_utils
 
@@ -55,6 +55,7 @@ class Module(tf.Module):
                       initializer: Initializer,
                       dtype: tf.DType = tf.float32,
                       **kwargs):
+    initializer = tf_utils.clone_initializer(initializer)
     return tf.Variable(initializer(shape, dtype=dtype, **kwargs), name=name)
 
   def read_variable(self,
@@ -156,7 +157,7 @@ class Embed(Module):
     if embeddings_initializer:
       self.embed_init = embeddings_initializer
     else:
-      self.embed_init = tf.keras.initializers.TruncatedNormal(stddev=1.0)
+      self.embed_init = tf_keras.initializers.TruncatedNormal(stddev=1.0)
     with self.name_scope:
       self.embeddings = self.create_variable(
           "embedding", [self.vocab_size, self.features],
@@ -223,7 +224,7 @@ class RMSNorm(Module):
       self.weight = self.create_variable(
           "scale", [hidden_size],
           dtype=self.dtype,
-          initializer=tf.keras.initializers.Ones())
+          initializer=tf_keras.initializers.Ones())
 
   @tf.Module.with_name_scope
   def __call__(self, x):
@@ -253,14 +254,14 @@ class Linear(Module):
     self.use_bias = use_bias
     self.w_init = w_init
     if self.use_bias:
-      self.b_init = b_init if b_init else tf.keras.initializers.Zeros()
+      self.b_init = b_init if b_init else tf_keras.initializers.Zeros()
     elif b_init is not None:
       raise ValueError("When not using a bias the b_init must be None.")
 
     with self.name_scope:
       if self.w_init is None:
         stddev = 1 / math.sqrt(self.in_features)
-        self.w_init = tf.keras.initializers.HeNormal()
+        self.w_init = tf_keras.initializers.HeNormal()
 
       self.w = self.create_variable(
           "kernel", [self.in_features, self.out_features],
@@ -321,13 +322,13 @@ class Linear3D(Module):
       self.bias_shape = (self.out_features,)
       bias_rank = 1
     if self.use_bias:
-      self.b_init = b_init or tf.keras.initializers.Zeros()
+      self.b_init = b_init or tf_keras.initializers.Zeros()
     elif b_init is not None:
       raise ValueError("When not using a bias the b_init must be None.")
 
     with self.name_scope:
       if self.w_init is None:
-        self.w_init = tf.keras.initializers.HeNormal()
+        self.w_init = tf_keras.initializers.HeNormal()
 
       self.w = self.create_variable(
           "kernel",
@@ -588,7 +589,8 @@ class MultiHeadAttention(Module):
         init_std_rescaling = tf.math.sqrt(tf.cast(self.d_kv, dtype=self.dtype))
         query_w_init = (
             lambda *args, **kwargs: (  # pylint: disable=g-long-lambda
-                weight_initializer(*args, **kwargs) / init_std_rescaling))
+                tf_utils.clone_initializer(weight_initializer)
+                (*args, **kwargs) / init_std_rescaling))
       self.q = Linear3D(
           self.d_model,
           self.d_kv,
@@ -705,6 +707,7 @@ class MultiHeadAttention(Module):
     if mask is not None:
       scores += mask  # (bs, n_heads, qlen, klen)
     weights = tf.nn.softmax(tf.cast(scores, tf.float32), axis=-1)
+    output_scores = weights
     # weights shape = (bs, n_heads, qlen, klen)
     weights = tf.cast(weights, scores.dtype)
     weight_shape = tf_utils.get_shape_list(weights)
@@ -718,6 +721,7 @@ class MultiHeadAttention(Module):
     c = self.o(c)
 
     outputs = dict(context=c)
+    outputs["attention_scores"] = output_scores
     if cache:
       outputs["cache"] = cache
     return outputs
@@ -851,6 +855,7 @@ class EncoderBlock(Module):
                rescale_query: bool = False,
                weight_initializer: Optional[Initializer] = None,
                bias_initializer: Optional[Initializer] = None,
+               return_attention_scores: bool = False,
                **kwargs):
     super().__init__(**kwargs)
     with self.name_scope:
@@ -879,6 +884,7 @@ class EncoderBlock(Module):
           dtype=self.dtype,
           name="ffn")
       self.ffn_output_dropout = Dropout(dropout_rate)
+      self.return_attention_scores = return_attention_scores
 
   @tf.Module.with_name_scope
   def __call__(self,
@@ -900,7 +906,8 @@ class EncoderBlock(Module):
     ffn_output = self.ffn_output_dropout(
         ffn_output, noise_shape=tensor_shape, training=training)
     ffn_output = attn_output + ffn_output
-
+    if self.return_attention_scores:
+      return ffn_output, attention_outputs["attention_scores"]
     return ffn_output
 
 
@@ -1004,6 +1011,7 @@ class T5TransformerParams:
   num_heads: int
   d_ff: int
   vocab_size: int
+  target_vocab_size: Optional[int] = None
   dropout_rate: float = 0.0
   layer_norm_epsilon: float = 1e-6
   shared_embedding: bool = False
@@ -1011,7 +1019,7 @@ class T5TransformerParams:
   relative_attention_num_buckets: int = 32
   relative_attention_max_distance: int = 128
   relative_embeddings_initializer: Optional[Initializer] = None
-  weight_initializer: Optional[Initializer] = (tf.keras.initializers.HeNormal())
+  weight_initializer: Optional[Initializer] = (tf_keras.initializers.HeNormal())
   bias_initializer: Optional[Initializer] = None
   rescale_query: bool = False
   bidirectional: bool = True
@@ -1020,6 +1028,10 @@ class T5TransformerParams:
   num_decoder_layers: Optional[int] = None
   one_hot_embedding: bool = True
   layer_sharing: bool = False
+  # If true, uses one relative embedding for all encoder layers and one for all
+  # decoder layers. Otherwise, have relative embedding for each layer.
+  use_shared_relative_position_bias: bool = True
+  return_attention_scores: bool = False
 
 
 class Encoder(Module):
@@ -1048,17 +1060,34 @@ class Encoder(Module):
         self.input_embed = shared_embedding
       # Creates an alias to the input embed for encoder-only models.
       self.word_embed = self.input_embed
-      self.relative_embedding = RelativePositionEmbedding(
-          num_heads=self.config.num_heads,
-          relative_attention_num_buckets=self.config
-          .relative_attention_num_buckets,
-          relative_attention_max_distance=self.config
-          .relative_attention_max_distance,
-          bidirectional=self.config.bidirectional,
-          embeddings_initializer=self.config.relative_embeddings_initializer,
-          dtype=self.dtype,
-          compute_dtype=self.compute_dtype,
-          name="relative_posemb")
+      if config.use_shared_relative_position_bias:
+        self.relative_embedding = RelativePositionEmbedding(
+            num_heads=self.config.num_heads,
+            relative_attention_num_buckets=self.config
+            .relative_attention_num_buckets,
+            relative_attention_max_distance=self.config
+            .relative_attention_max_distance,
+            bidirectional=self.config.bidirectional,
+            embeddings_initializer=self.config.relative_embeddings_initializer,
+            dtype=self.dtype,
+            compute_dtype=self.compute_dtype,
+            name="relative_posemb")
+      else:
+        self.relative_embeddings = []
+        for layer_idx in range(self.config.num_layers):
+          relative_embedding = RelativePositionEmbedding(
+              num_heads=self.config.num_heads,
+              relative_attention_num_buckets=self.config
+              .relative_attention_num_buckets,
+              relative_attention_max_distance=self.config
+              .relative_attention_max_distance,
+              bidirectional=self.config.bidirectional,
+              embeddings_initializer=self.config
+              .relative_embeddings_initializer,
+              dtype=self.dtype,
+              compute_dtype=self.compute_dtype,
+              name=f"relative_posemb_{layer_idx}")
+          self.relative_embeddings.append(relative_embedding)
       self.input_dropout = Dropout(self.config.dropout_rate,)
       self.encoder_layers = []
       for layer_idx in range(self.config.num_layers):
@@ -1076,6 +1105,7 @@ class Encoder(Module):
                   rescale_query=self.config.rescale_query,
                   weight_initializer=self.config.weight_initializer,
                   bias_initializer=self.config.bias_initializer,
+                  return_attention_scores=self.config.return_attention_scores,
                   dtype=self.dtype,
                   name="encoder_block_%d" % layer_idx))
       self.output_norm = RMSNorm(
@@ -1086,12 +1116,38 @@ class Encoder(Module):
       self.output_dropout = Dropout(self.config.dropout_rate,)
 
   @tf.Module.with_name_scope
-  def __call__(self, inputs, encoder_mask=None, training=False):
+  def get_relpos_bias(self,
+                      input_length: int,
+                      dense_inputs: tf.Tensor,
+                      layer_idx: Optional[int] = None) -> tf.Tensor:
+    if self.config.use_shared_relative_position_bias:
+      position_bias = self.relative_embedding(input_length, input_length)
+    else:
+      position_bias = self.relative_embeddings[layer_idx](input_length,
+                                                          input_length)
+    if dense_inputs is not None:
+      # Here we ignore relative position bias for dense embeddings.
+      # TODO(yejiayu): If we proceed to video use cases, rework this part.
+      dense_input_length = tf_utils.get_shape_list(dense_inputs)[1]
+      # Position bias shape: [batch, 1, len, len]
+      paddings = tf.constant([[0, 0], [0, 0], [0, dense_input_length],
+                              [0, dense_input_length]])
+      position_bias = tf.pad(position_bias, paddings, "CONSTANT")
+    return position_bias
+
+  @tf.Module.with_name_scope
+  def __call__(self,
+               inputs=None,
+               encoder_mask=None,
+               dense_inputs=None,
+               training=False):
     """Applies Transformer model on the inputs.
 
     Args:
-      inputs: input data
+      inputs: input word ids. Optional if dense data are provided.
       encoder_mask: the encoder self-attention mask.
+      dense_inputs: dense input data. Concat after the embedding if word ids are
+        provided.
       training: whether it is training pass, affecting dropouts.
 
     Returns:
@@ -1101,23 +1157,42 @@ class Encoder(Module):
     if encoder_mask is not None:
       encoder_mask = tf.cast(encoder_mask, self.compute_dtype)
     cfg = self.config
-    x = self.input_embed(inputs, one_hot=cfg.one_hot_embedding)
+    inputs_array = []
+    if inputs is not None:
+      inputs_array.append(
+          self.input_embed(inputs, one_hot=cfg.one_hot_embedding))
+    if dense_inputs is not None:
+      inputs_array.append(dense_inputs)
+    if not inputs_array:
+      raise ValueError("At least one of inputs and dense_inputs must not be "
+                       "None.")
+    x = tf.concat(inputs_array, axis=1)
     tensor_shape = tf_utils.get_shape_list(x)
     tensor_shape[-2] = 1
     x = self.input_dropout(x, noise_shape=tensor_shape, training=training)
-    input_length = tf_utils.get_shape_list(inputs)[1]
-    position_bias = self.relative_embedding(input_length, input_length)
+    if inputs is not None:
+      input_length = tf_utils.get_shape_list(inputs)[1]
+    else:
+      input_length = 0
 
+    attention_outputs = []
     for i in range(cfg.num_layers):
+      position_bias = self.get_relpos_bias(input_length, dense_inputs, i)
       x = self.encoder_layers[i](
           x,
           attention_mask=encoder_mask,
           position_bias=position_bias,
           training=training)
+      if self.config.return_attention_scores:
+        x, attention_scores = x
+        attention_outputs.append(attention_scores)
 
     encoded = self.output_norm(x)
     encoded = self.output_dropout(encoded, training=training)
-    return encoded
+    if self.config.return_attention_scores:
+      return encoded, attention_outputs
+    else:
+      return encoded
 
 
 class Decoder(Module):
@@ -1133,11 +1208,15 @@ class Decoder(Module):
     self.compute_dtype = compute_dtype
     if self.config.num_decoder_layers is None:
       self.config.num_decoder_layers = self.config.num_layers
+    if not hasattr(
+        self.config,
+        "target_vocab_size") or self.config.target_vocab_size is None:
+      self.config.target_vocab_size = self.config.vocab_size
     with self.name_scope:
       # Target Embedding.
       if shared_embedding is None:
         self.target_embed = Embed(
-            vocab_size=self.config.vocab_size,
+            vocab_size=self.config.target_vocab_size,
             features=self.config.d_model,
             embeddings_initializer=self.config.vocab_embeddings_initializer,
             dtype=self.dtype,
@@ -1147,17 +1226,34 @@ class Decoder(Module):
         self.target_embed = shared_embedding
       self.target_dropout = Dropout(self.config.dropout_rate,)
       # Position bias for the target self attention.
-      self.relative_embedding = RelativePositionEmbedding(
-          num_heads=self.config.num_heads,
-          relative_attention_num_buckets=self.config
-          .relative_attention_num_buckets,
-          relative_attention_max_distance=self.config
-          .relative_attention_max_distance,
-          bidirectional=self.config.bidirectional,
-          embeddings_initializer=self.config.relative_embeddings_initializer,
-          dtype=self.dtype,
-          compute_dtype=self.compute_dtype,
-          name="relative_posemb")
+      if config.use_shared_relative_position_bias:
+        self.relative_embedding = RelativePositionEmbedding(
+            num_heads=self.config.num_heads,
+            relative_attention_num_buckets=self.config
+            .relative_attention_num_buckets,
+            relative_attention_max_distance=self.config
+            .relative_attention_max_distance,
+            bidirectional=self.config.bidirectional,
+            embeddings_initializer=self.config.relative_embeddings_initializer,
+            dtype=self.dtype,
+            compute_dtype=self.compute_dtype,
+            name="relative_posemb")
+      else:
+        self.relative_embeddings = []
+        for layer_idx in range(self.config.num_decoder_layers):
+          relative_embedding = RelativePositionEmbedding(
+              num_heads=self.config.num_heads,
+              relative_attention_num_buckets=self.config
+              .relative_attention_num_buckets,
+              relative_attention_max_distance=self.config
+              .relative_attention_max_distance,
+              bidirectional=self.config.bidirectional,
+              embeddings_initializer=self.config
+              .relative_embeddings_initializer,
+              dtype=self.dtype,
+              compute_dtype=self.compute_dtype,
+              name=f"relative_posemb_{layer_idx}")
+          self.relative_embeddings.append(relative_embedding)
       self.decoder_layers = []
       for layer_idx in range(self.config.num_decoder_layers):
         if self.config.layer_sharing and layer_idx > 0:
@@ -1185,10 +1281,17 @@ class Decoder(Module):
       if not self.config.logits_via_embedding:
         self.logits_dense = Linear(
             in_features=self.config.d_model,
-            out_features=self.config.vocab_size,
+            out_features=self.config.target_vocab_size,
             use_bias=False,
             dtype=self.dtype,
             name="logits")
+
+  @tf.Module.with_name_scope
+  def get_relpos_bias(self, input_length: int, layer_idx: int) -> tf.Tensor:
+    if self.config.use_shared_relative_position_bias:
+      return self.relative_embedding(input_length, input_length)
+    else:
+      return self.relative_embeddings[layer_idx](input_length, input_length)
 
   @tf.Module.with_name_scope
   def __call__(self,
@@ -1208,7 +1311,7 @@ class Decoder(Module):
       encoded: the encoder outputs.
       decoder_mask: the decoder self-attention mask.
       encoder_decoder_mask: the cross-attention mask.
-      decode: Whether to perform autoaggressive decoding.
+      decode: Whether to perform autoregressive decoding.
       decode_position: integer, the position to decode.
       cache: The cache dictionary of key, value tensors.
       max_decode_len: An optional integer specifying the maximum decoding
@@ -1217,7 +1320,10 @@ class Decoder(Module):
       training: Whether it is training pass, affecting dropouts.
 
     Returns:
-      output of a transformer encoder.
+      output of a transformer encoder including
+      1. logits: Logits for each word in the vocab.
+      2. raw_logits: Logits along the moded dimension.
+      3. cache: Used for decoding in inference mode.
     """
     cfg = self.config
     # Casts inputs to the dtype.
@@ -1230,12 +1336,14 @@ class Decoder(Module):
     tensor_shape = tf_utils.get_shape_list(x)
     tensor_shape[-2] = 1
     x = self.target_dropout(x, noise_shape=tensor_shape, training=training)
-    if cache is not None:
-      position_bias = self.relative_embedding(max_decode_len, max_decode_len)
-    else:
-      input_length = tf_utils.get_shape_list(decoder_input_tokens)[1]
-      position_bias = self.relative_embedding(input_length, input_length)
+
     for i in range(cfg.num_decoder_layers):
+      if cache is not None:
+        position_bias = self.get_relpos_bias(max_decode_len, i)
+      else:
+        input_length = tf_utils.get_shape_list(decoder_input_tokens)[1]
+        position_bias = self.get_relpos_bias(input_length, i)
+
       if cache is None:
         x, _ = self.decoder_layers[i](
             x,
@@ -1265,7 +1373,7 @@ class Decoder(Module):
       logits = logits / math.sqrt(cfg.d_model)
     else:
       logits = self.logits_dense(output)
-    return logits, cache
+    return dict(logits=logits, cache=cache, raw_logits=output)
 
 
 class T5Transformer(Module):
@@ -1279,6 +1387,7 @@ class T5Transformer(Module):
     # Builds the model components.
     shared_embedding = config.shared_embedding
     self.compute_dtype = compute_dtype
+    self.config = config
     self.decoder_cfg = dataclasses.replace(config, bidirectional=False)
     if self.decoder_cfg.num_decoder_layers is None:
       self.decoder_cfg.num_decoder_layers = self.decoder_cfg.num_layers
@@ -1306,33 +1415,72 @@ class T5Transformer(Module):
           compute_dtype=self.compute_dtype)
 
   def encode(self,
-             encoder_input_tokens,
+             encoder_input_tokens=None,
              encoder_segment_ids=None,
+             encoder_dense_inputs=None,
+             encoder_dense_segment_ids=None,
              training=False):
-    eligible_positions = tf.cast(
-        tf.not_equal(encoder_input_tokens, 0), self.compute_dtype)
+    eligible_position_array = []
+    if encoder_input_tokens is not None:
+      eligible_position_array.append(
+          tf.cast(tf.not_equal(encoder_input_tokens, 0), self.compute_dtype))
+    if encoder_dense_inputs is not None:
+      eligible_dense_positions = tf.cast(
+          tf.reduce_any(tf.not_equal(encoder_dense_inputs, 0), axis=-1),
+          self.compute_dtype)
+      eligible_position_array.append(eligible_dense_positions)
+    if not eligible_position_array:
+      raise ValueError("At least one of encoder_input_tokens and"
+                       " encoder_dense_inputs must be provided.")
+
+    eligible_positions = tf.concat(eligible_position_array, axis=1)
     encoder_mask = make_attention_mask(
         eligible_positions, eligible_positions, dtype=tf.bool)
+
+    encoder_segment_id_array = []
     if encoder_segment_ids is not None:
+      encoder_segment_id_array.append(encoder_segment_ids)
+    if encoder_dense_segment_ids is not None:
+      encoder_segment_id_array.append(encoder_dense_segment_ids)
+    if encoder_segment_id_array:
+      encoder_segment_ids = tf.concat(encoder_segment_id_array, axis=1)
       segment_mask = make_attention_mask(
           encoder_segment_ids, encoder_segment_ids, tf.equal, dtype=tf.bool)
       encoder_mask = tf.math.logical_and(encoder_mask, segment_mask)
     encoder_mask = (1.0 - tf.cast(encoder_mask, self.compute_dtype)) * -1e9
-    return self.encoder(encoder_input_tokens, encoder_mask, training=training)
+    return self.encoder(
+        encoder_input_tokens,
+        encoder_mask,
+        encoder_dense_inputs,
+        training=training)
 
   def decode(
       self,
       encoded,
       decoder_target_tokens,
-      encoder_input_tokens,  # only used for masks
+      encoder_input_tokens=None,  # only used for masks
+      encoder_dense_inputs=None,
       decoder_input_tokens=None,
       encoder_segment_ids=None,
+      encoder_dense_segment_ids=None,
       decoder_segment_ids=None,
       decode_position=None,
       cache=None,
       max_decode_len=None,
       decode=False,
-      training=False):
+      training=False) -> Dict[str, tf.Tensor]:
+    eligible_inputs_array = []
+    if encoder_input_tokens is not None:
+      eligible_inputs = tf.cast(
+          tf.not_equal(encoder_input_tokens, 0), self.compute_dtype)
+      eligible_inputs_array.append(eligible_inputs)
+    if encoder_dense_inputs is not None:
+      eligible_dense_inputs = tf.cast(
+          tf.reduce_any(tf.not_equal(encoder_dense_inputs, 0), axis=-1),
+          self.compute_dtype)
+      eligible_inputs_array.append(eligible_dense_inputs)
+    eligible_inputs = tf.concat(eligible_inputs_array, axis=1)
+
     if decode:
       # For decoding, the decoder_input_tokens is the decoder_target_tokens.
       decoder_input_tokens = decoder_target_tokens
@@ -1342,14 +1490,12 @@ class T5Transformer(Module):
           tf.cast(
               tf.not_equal(tf.ones_like(decoder_target_tokens), 0),
               self.compute_dtype),
-          tf.cast(tf.not_equal(encoder_input_tokens, 0), self.compute_dtype),
+          eligible_inputs,
           dtype=tf.bool)
     else:
       # Note that, masks should be created using decoder_target_tokens.
       eligible_targets = tf.cast(
           tf.not_equal(decoder_target_tokens, 0), self.compute_dtype)
-      eligible_inputs = tf.cast(
-          tf.not_equal(encoder_input_tokens, 0), self.compute_dtype)
       decoder_mask = tf.math.logical_and(
           make_attention_mask(
               eligible_targets, eligible_targets, dtype=tf.bool),
@@ -1365,6 +1511,9 @@ class T5Transformer(Module):
                   decoder_segment_ids,
                   tf.equal,
                   dtype=tf.bool))
+        if encoder_dense_segment_ids is not None:
+          encoder_segment_ids = tf.concat(
+              [encoder_segment_ids, encoder_dense_segment_ids], axis=1)
         encoder_decoder_mask = tf.math.logical_and(
             encoder_decoder_mask,
             make_attention_mask(
@@ -1376,7 +1525,7 @@ class T5Transformer(Module):
       decoder_mask = (1.0 - tf.cast(decoder_mask, self.compute_dtype)) * -1e9
     encoder_decoder_mask = (
         1.0 - tf.cast(encoder_decoder_mask, self.compute_dtype)) * -1e9
-    logits, cache = self.decoder(
+    outputs = self.decoder(
         decoder_input_tokens,
         encoded,
         decode_position=decode_position,
@@ -1386,12 +1535,15 @@ class T5Transformer(Module):
         max_decode_len=max_decode_len,
         decode=decode,
         training=training)
-    return dict(logits=logits, encoded=encoded, cache=cache)
+    outputs["encoded"] = encoded
+    return outputs
 
   @tf.Module.with_name_scope
   def __call__(self,
-               encoder_input_tokens,
-               decoder_target_tokens,
+               encoder_input_tokens=None,
+               decoder_target_tokens=None,
+               encoder_dense_inputs=None,
+               encoder_dense_segment_ids=None,
                decoder_input_tokens=None,
                encoder_segment_ids=None,
                decoder_segment_ids=None,
@@ -1401,9 +1553,12 @@ class T5Transformer(Module):
     Args:
       encoder_input_tokens: input tokens to the encoder.
       decoder_target_tokens: target tokens to the decoder.
+      encoder_dense_inputs: input dense vectors to the encoder.
+      encoder_dense_segment_ids: dense input segmentation info for packed
       decoder_input_tokens: input tokens to the decoder, only required for
         training.
       encoder_segment_ids: input segmentation info for packed examples.
+        examples.
       decoder_segment_ids: target segmentation info for packed examples.
       training: whether it is training pass, affecting dropouts.
 
@@ -1411,18 +1566,26 @@ class T5Transformer(Module):
       a dictionary of logits/cache.
     """
     encoded = self.encode(
-        encoder_input_tokens,
+        encoder_input_tokens=encoder_input_tokens,
         encoder_segment_ids=encoder_segment_ids,
+        encoder_dense_inputs=encoder_dense_inputs,
+        encoder_dense_segment_ids=encoder_dense_segment_ids,
         training=training)
+    if self.config.return_attention_scores:
+      encoded, attn_scores = encoded
     outputs = self.decode(
         encoded=encoded,
         decoder_target_tokens=decoder_target_tokens,
         encoder_input_tokens=encoder_input_tokens,  # only used for masks.
+        encoder_dense_inputs=encoder_dense_inputs,  # only used for masks.
         decoder_input_tokens=decoder_input_tokens,
         encoder_segment_ids=encoder_segment_ids,
+        encoder_dense_segment_ids=encoder_dense_segment_ids,
         decoder_segment_ids=decoder_segment_ids,
         training=training)
     outputs["encoded"] = encoded
+    if self.config.return_attention_scores:
+      outputs["attention_scores"] = attn_scores
     return outputs
 
   @property

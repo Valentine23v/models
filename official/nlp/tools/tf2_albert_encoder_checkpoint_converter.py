@@ -1,4 +1,4 @@
-# Copyright 2021 The TensorFlow Authors. All Rights Reserved.
+# Copyright 2025 The TensorFlow Authors. All Rights Reserved.
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -22,12 +22,12 @@ import os
 from absl import app
 from absl import flags
 
-import tensorflow as tf
+import tensorflow as tf, tf_keras
+from official.legacy.albert import configs
 from official.modeling import tf_utils
-from official.nlp.albert import configs
-from official.nlp.bert import tf1_checkpoint_converter_lib
 from official.nlp.modeling import models
 from official.nlp.modeling import networks
+from official.nlp.tools import tf1_bert_checkpoint_converter_lib
 
 FLAGS = flags.FLAGS
 
@@ -94,7 +94,7 @@ def _create_albert_model(cfg):
       attention_dropout_rate=cfg.attention_probs_dropout_prob,
       max_sequence_length=cfg.max_position_embeddings,
       type_vocab_size=cfg.type_vocab_size,
-      initializer=tf.keras.initializers.TruncatedNormal(
+      initializer=tf_keras.initializers.TruncatedNormal(
           stddev=cfg.initializer_range))
   return albert_encoder
 
@@ -112,7 +112,7 @@ def _create_pretrainer_model(cfg):
   pretrainer = models.BertPretrainerV2(
       encoder_network=albert_encoder,
       mlm_activation=tf_utils.get_activation(cfg.hidden_act),
-      mlm_initializer=tf.keras.initializers.TruncatedNormal(
+      mlm_initializer=tf_keras.initializers.TruncatedNormal(
           stddev=cfg.initializer_range))
   # Makes sure masked_lm layer's variables in pretrainer are created.
   _ = pretrainer(pretrainer.inputs)
@@ -128,12 +128,12 @@ def convert_checkpoint(bert_config, output_path, v1_checkpoint,
   # Create a temporary V1 name-converted checkpoint in the output directory.
   temporary_checkpoint_dir = os.path.join(output_dir, "temp_v1")
   temporary_checkpoint = os.path.join(temporary_checkpoint_dir, "ckpt")
-  tf1_checkpoint_converter_lib.convert(
+  tf1_bert_checkpoint_converter_lib.convert(
       checkpoint_from_path=v1_checkpoint,
       checkpoint_to_path=temporary_checkpoint,
       num_heads=bert_config.num_attention_heads,
       name_replacements=ALBERT_NAME_REPLACEMENTS,
-      permutations=tf1_checkpoint_converter_lib.BERT_V2_PERMUTATIONS,
+      permutations=tf1_bert_checkpoint_converter_lib.BERT_V2_PERMUTATIONS,
       exclude_patterns=["adam", "Adam"])
 
   # Create a V2 checkpoint from the temporary checkpoint.
@@ -144,9 +144,8 @@ def convert_checkpoint(bert_config, output_path, v1_checkpoint,
   else:
     raise ValueError("Unsupported converted_model: %s" % converted_model)
 
-  tf1_checkpoint_converter_lib.create_v2_checkpoint(model, temporary_checkpoint,
-                                                    output_path,
-                                                    checkpoint_model_name)
+  tf1_bert_checkpoint_converter_lib.create_v2_checkpoint(
+      model, temporary_checkpoint, output_path, checkpoint_model_name)
 
   # Clean up the temporary checkpoint, if it exists.
   try:

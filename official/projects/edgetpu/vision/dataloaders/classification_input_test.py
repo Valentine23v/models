@@ -1,4 +1,4 @@
-# Copyright 2021 The TensorFlow Authors. All Rights Reserved.
+# Copyright 2025 The TensorFlow Authors. All Rights Reserved.
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -15,10 +15,10 @@
 """Tests classification_input.py."""
 
 from absl.testing import parameterized
-import tensorflow as tf
+import tensorflow as tf, tf_keras
 from official.projects.edgetpu.vision.dataloaders import classification_input
-from official.vision.beta.configs import common
-from official.vision.beta.dataloaders import tfexample_utils
+from official.vision.configs import common
+from official.vision.dataloaders import tfexample_utils
 
 IMAGE_FIELD_KEY = 'image/encoded'
 LABEL_FIELD_KEY = 'image/class/label'

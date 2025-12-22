@@ -1,4 +1,4 @@
-# Copyright 2021 The TensorFlow Authors. All Rights Reserved.
+# Copyright 2025 The TensorFlow Authors. All Rights Reserved.
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -12,16 +12,15 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-# Lint as: python3
 """Tests for segmentation network."""
 
 from absl.testing import parameterized
 import numpy as np
-import tensorflow as tf
+import tensorflow as tf, tf_keras
 from official.projects.volumetric_models.modeling import backbones
 from official.projects.volumetric_models.modeling import decoders
 from official.projects.volumetric_models.modeling.heads import segmentation_heads_3d
-from official.vision.beta.modeling import segmentation_model
+from official.vision.modeling import segmentation_model
 
 
 class SegmentationNetworkUNet3DTest(parameterized.TestCase, tf.test.TestCase):
@@ -36,7 +35,7 @@ class SegmentationNetworkUNet3DTest(parameterized.TestCase, tf.test.TestCase):
     """Test for creation of a segmentation network."""
     num_classes = 2
     inputs = np.random.rand(2, input_size[0], input_size[0], input_size[1], 3)
-    tf.keras.backend.set_image_data_format('channels_last')
+    tf_keras.backend.set_image_data_format('channels_last')
     backbone = backbones.UNet3D(model_id=depth)
 
     decoder = decoders.UNet3DDecoder(
@@ -47,10 +46,10 @@ class SegmentationNetworkUNet3DTest(parameterized.TestCase, tf.test.TestCase):
     model = segmentation_model.SegmentationModel(
         backbone=backbone, decoder=decoder, head=head)
 
-    logits = model(inputs)
+    outputs = model(inputs)
     self.assertAllEqual(
         [2, input_size[0], input_size[0], input_size[1], num_classes],
-        logits.numpy().shape)
+        outputs['logits'].numpy().shape)
 
   def test_serialize_deserialize(self):
     """Validate the network can be serialized and deserialized."""

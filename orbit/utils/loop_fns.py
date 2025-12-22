@@ -1,4 +1,4 @@
-# Copyright 2021 The Orbit Authors. All Rights Reserved.
+# Copyright 2025 The Orbit Authors. All Rights Reserved.
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -14,9 +14,14 @@
 
 """Utilities for creating loop functions."""
 
+from absl import logging
 from orbit.utils import tpu_summaries
 
-import tensorflow as tf
+import tensorflow as tf, tf_keras
+
+# pylint: disable=g-direct-tensorflow-import
+from tensorflow.python.tpu import embedding_context_utils as ecu
+# pylint: enable=g-direct-tensorflow-import
 
 
 def create_loop_fn(step_fn):
@@ -65,8 +70,8 @@ def create_loop_fn(step_fn):
       The final state returned by `reduce_fn`, or `None` if `state` and
       `reduce_fn` are not provided.
     """
+    step = 0
     try:
-      step = 0
       # To make sure the OutOfRangeError exception can be handled well under
       # async remote eager, we need to wrap the loop body in `async_scope`.
       with tf.experimental.async_scope():
@@ -77,6 +82,7 @@ def create_loop_fn(step_fn):
           step += 1
         return state
     except (StopIteration, tf.errors.OutOfRangeError):
+      logging.info("The dataset iterator is exhausted after %d steps.", step)
       tf.experimental.async_clear_error()
       return state
 
@@ -198,7 +204,8 @@ class LoopFnWithSummaries(tpu_summaries.OptionalSummariesFunction):
 
   def __call__(self, iterator, num_steps):
     if tf.summary.should_record_summaries():
-      output = self.with_summaries(iterator, tf.constant(1))
+      with ecu.SequentialEmbeddingContext():
+        output = self.with_summaries(iterator, tf.constant(1))
       num_steps -= 1
     if num_steps >= 1:
       output = self.without_summaries(iterator, num_steps)

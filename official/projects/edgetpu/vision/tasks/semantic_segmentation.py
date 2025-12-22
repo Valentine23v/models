@@ -1,4 +1,4 @@
-# Copyright 2021 The TensorFlow Authors. All Rights Reserved.
+# Copyright 2025 The TensorFlow Authors. All Rights Reserved.
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -16,7 +16,7 @@
 from typing import Any, Mapping, Optional
 
 from absl import logging
-import tensorflow as tf
+import tensorflow as tf, tf_keras
 
 from official.common import dataset_fn
 from official.core import config_definitions as cfg
@@ -27,11 +27,11 @@ from official.projects.edgetpu.vision.modeling import mobilenet_edgetpu_v1_model
 from official.projects.edgetpu.vision.modeling import mobilenet_edgetpu_v2_model
 from official.projects.edgetpu.vision.modeling.backbones import mobilenet_edgetpu  # pylint: disable=unused-import
 from official.projects.edgetpu.vision.modeling.heads import bifpn_head
-from official.vision.beta.dataloaders import input_reader_factory
-from official.vision.beta.dataloaders import segmentation_input
-from official.vision.beta.dataloaders import tfds_factory
-from official.vision.beta.ops import preprocess_ops
-from official.vision.beta.tasks import semantic_segmentation
+from official.vision.dataloaders import input_reader_factory
+from official.vision.dataloaders import segmentation_input
+from official.vision.dataloaders import tfds_factory
+from official.vision.ops import preprocess_ops
+from official.vision.tasks import semantic_segmentation
 
 
 class ClassMappingParser(segmentation_input.Parser):
@@ -99,7 +99,7 @@ class CustomSemanticSegmentationTask(
     return dataset
 
 
-class AutosegEdgeTPU(tf.keras.Model):
+class AutosegEdgeTPU(tf_keras.Model):
   """Segmentation keras network without pre/post-processing."""
 
   def __init__(self,
@@ -208,7 +208,7 @@ class AutosegEdgeTPU(tf.keras.Model):
         fullres_output=fullres_output,
         num_classes=num_classes)
 
-  def call(self, inputs, training):
+  def call(self, inputs, training):  # pytype: disable=signature-mismatch  # overriding-parameter-count-checks
     # call backbone network.
     all_feats = self.backbone(inputs, training=training)
     if self.use_original_backbone_features:
@@ -232,7 +232,7 @@ class AutosegEdgeTPU(tf.keras.Model):
     return class_outputs
 
 
-def get_models() -> Mapping[str, tf.keras.Model]:
+def get_models() -> Mapping[str, tf_keras.Model]:
   """Returns the mapping from model type name to Keras model."""
   model_mapping = {}
 

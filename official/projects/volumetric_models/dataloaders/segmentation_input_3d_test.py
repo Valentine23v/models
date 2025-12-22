@@ -1,4 +1,4 @@
-# Copyright 2021 The TensorFlow Authors. All Rights Reserved.
+# Copyright 2025 The TensorFlow Authors. All Rights Reserved.
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -17,10 +17,10 @@
 import os
 
 from absl.testing import parameterized
-import tensorflow as tf
+import tensorflow as tf, tf_keras
 
 from official.projects.volumetric_models.dataloaders import segmentation_input_3d
-from official.vision.beta.dataloaders import tfexample_utils
+from official.vision.dataloaders import tfexample_utils
 
 
 class InputReaderTest(parameterized.TestCase, tf.test.TestCase):

@@ -1,4 +1,4 @@
-# Copyright 2021 The TensorFlow Authors. All Rights Reserved.
+# Copyright 2025 The TensorFlow Authors. All Rights Reserved.
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -13,24 +13,22 @@
 # limitations under the License.
 
 """Common library to export a SavedModel from the export module."""
-import os
-import time
-from typing import Dict, List, Optional, Text, Union
+from typing import Dict, List, Optional, Union, Any
 
-from absl import logging
-import tensorflow as tf
+import tensorflow as tf, tf_keras
 
 from official.core import export_base
 
-
-MAX_DIRECTORY_CREATION_ATTEMPTS = 10
+get_timestamped_export_dir = export_base.get_timestamped_export_dir
 
 
 def export(export_module: export_base.ExportModule,
-           function_keys: Union[List[Text], Dict[Text, Text]],
-           export_savedmodel_dir: Text,
-           checkpoint_path: Optional[Text] = None,
-           timestamped: bool = True) -> Text:
+           function_keys: Union[List[str], Dict[str, str]],
+           export_savedmodel_dir: str,
+           checkpoint_path: Optional[str] = None,
+           timestamped: bool = True,
+           module_key: Optional[str] = None,
+           checkpoint_kwargs: Optional[Dict[str, Any]] = None) -> str:
   """Exports to SavedModel format.
 
   Args:
@@ -41,6 +39,10 @@ def export(export_module: export_base.ExportModule,
     export_savedmodel_dir: Output saved model directory.
     checkpoint_path: Object-based checkpoint path or directory.
     timestamped: Whether to export the savedmodel to a timestamped directory.
+    module_key: Optional string to identify a checkpoint object to load for the
+      model in the export module.
+    checkpoint_kwargs: Optional dict used as keyword args to create the
+      checkpoint object. Not used if module_key is present.
 
   Returns:
     The savedmodel directory path.
@@ -48,37 +50,18 @@ def export(export_module: export_base.ExportModule,
   save_options = tf.saved_model.SaveOptions(function_aliases={
       'tpu_candidate': export_module.serve,
   })
-  return export_base.export(export_module, function_keys, export_savedmodel_dir,
-                            checkpoint_path, timestamped, save_options)
-
-
-def get_timestamped_export_dir(export_dir_base):
-  """Builds a path to a new subdirectory within the base directory.
-
-  Args:
-    export_dir_base: A string containing a directory to write the exported graph
-      and checkpoints.
-
-  Returns:
-    The full path of the new subdirectory (which is not actually created yet).
-
-  Raises:
-    RuntimeError: if repeated attempts fail to obtain a unique timestamped
-      directory name.
-  """
-  attempts = 0
-  while attempts < MAX_DIRECTORY_CREATION_ATTEMPTS:
-    timestamp = int(time.time())
-
-    result_dir = os.path.join(export_dir_base, str(timestamp))
-    if not tf.io.gfile.exists(result_dir):
-      # Collisions are still possible (though extremely unlikely): this
-      # directory is not actually created yet, but it will be almost
-      # instantly on return from this function.
-      return result_dir
-    time.sleep(1)
-    attempts += 1
-    logging.warning('Directory %s already exists; retrying (attempt %s/%s)',
-                    str(result_dir), attempts, MAX_DIRECTORY_CREATION_ATTEMPTS)
-  raise RuntimeError('Failed to obtain a unique export directory name after '
-                     f'{MAX_DIRECTORY_CREATION_ATTEMPTS} attempts.')
+  if module_key:
+    kwargs = {module_key: export_module.model}
+    checkpoint = tf.train.Checkpoint(**kwargs)
+  elif checkpoint_kwargs:
+    checkpoint = tf.train.Checkpoint(**checkpoint_kwargs)
+  else:
+    checkpoint = None
+  return export_base.export(
+      export_module,
+      function_keys,
+      export_savedmodel_dir,
+      checkpoint_path,
+      timestamped,
+      save_options,
+      checkpoint=checkpoint)

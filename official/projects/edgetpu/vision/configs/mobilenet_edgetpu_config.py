@@ -1,4 +1,4 @@
-# Copyright 2021 The TensorFlow Authors. All Rights Reserved.
+# Copyright 2025 The TensorFlow Authors. All Rights Reserved.
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -19,13 +19,11 @@ import dataclasses
 import os
 from typing import Any, Mapping, Optional
 
-# Import libraries
-
 from official.core import config_definitions as cfg
 from official.core import exp_factory
 from official.modeling import optimization
-from official.vision.beta.configs import common
-from official.vision.beta.configs import image_classification as base_config
+from official.vision.configs import common
+from official.vision.configs import image_classification as base_config
 
 
 @dataclasses.dataclass
@@ -60,7 +58,9 @@ class MobilenetEdgeTPUTaskConfig(base_config.ImageClassificationTask):
     saved_model_path: Instead of initializing a model from the model config,
       the model can be loaded from a file path.
   """
-  model: MobilenetEdgeTPUModelConfig = MobilenetEdgeTPUModelConfig()
+  model: MobilenetEdgeTPUModelConfig = dataclasses.field(
+      default_factory=MobilenetEdgeTPUModelConfig
+  )
   saved_model_path: Optional[str] = None
 
 

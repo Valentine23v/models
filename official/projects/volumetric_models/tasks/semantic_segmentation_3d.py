@@ -1,4 +1,4 @@
-# Copyright 2021 The TensorFlow Authors. All Rights Reserved.
+# Copyright 2025 The TensorFlow Authors. All Rights Reserved.
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -12,12 +12,11 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-# Lint as: python3
 """Image segmentation task definition."""
 from typing import Any, Dict, Mapping, Optional, Sequence, Union
 
 from absl import logging
-import tensorflow as tf
+import tensorflow as tf, tf_keras
 
 from official.common import dataset_fn
 from official.core import base_task
@@ -34,9 +33,9 @@ from official.projects.volumetric_models.modeling import factory
 class SemanticSegmentation3DTask(base_task.Task):
   """A task for semantic segmentation."""
 
-  def build_model(self) -> tf.keras.Model:
+  def build_model(self) -> tf_keras.Model:
     """Builds segmentation model."""
-    input_specs = tf.keras.layers.InputSpec(
+    input_specs = tf_keras.layers.InputSpec(
         shape=[None] + self.task_config.model.input_size +
         [self.task_config.model.num_channels],
         dtype=self.task_config.train_data.dtype)
@@ -46,7 +45,7 @@ class SemanticSegmentation3DTask(base_task.Task):
     # (https://www.tensorflow.org/api_docs/python/tf/keras/regularizers/l2)
     # (https://www.tensorflow.org/api_docs/python/tf/nn/l2_loss)
     l2_regularizer = (
-        tf.keras.regularizers.l2(l2_weight_decay /
+        tf_keras.regularizers.l2(l2_weight_decay /
                                  2.0) if l2_weight_decay else None)
 
     model = factory.build_segmentation_model_3d(
@@ -67,7 +66,7 @@ class SemanticSegmentation3DTask(base_task.Task):
 
     return model
 
-  def initialize(self, model: tf.keras.Model):
+  def initialize(self, model: tf_keras.Model):
     """Loads pretrained checkpoint."""
     if not self.task_config.init_checkpoint:
       return
@@ -144,13 +143,13 @@ class SemanticSegmentation3DTask(base_task.Task):
     return total_loss
 
   def build_metrics(self,
-                    training: bool = True) -> Sequence[tf.keras.metrics.Metric]:
+                    training: bool = True) -> Sequence[tf_keras.metrics.Metric]:
     """Gets streaming metrics for training/validation."""
     metrics = []
     num_classes = self.task_config.model.num_classes
     if training:
       metrics.extend([
-          tf.keras.metrics.CategoricalAccuracy(
+          tf_keras.metrics.CategoricalAccuracy(
               name='train_categorical_accuracy', dtype=tf.float32)
       ])
     else:
@@ -169,9 +168,9 @@ class SemanticSegmentation3DTask(base_task.Task):
   def train_step(
       self,
       inputs,
-      model: tf.keras.Model,
-      optimizer: tf.keras.optimizers.Optimizer,
-      metrics: Optional[Sequence[tf.keras.metrics.Metric]] = None
+      model: tf_keras.Model,
+      optimizer: tf_keras.optimizers.Optimizer,
+      metrics: Optional[Sequence[tf_keras.metrics.Metric]] = None
   ) -> Dict[Any, Any]:
     """Does forward and backward.
 
@@ -198,6 +197,8 @@ class SemanticSegmentation3DTask(base_task.Task):
       # Casting output layer as float32 is necessary when mixed_precision is
       # mixed_float16 or mixed_bfloat16 to ensure output is casted as float32.
       outputs = tf.nest.map_structure(lambda x: tf.cast(x, tf.float32), outputs)
+
+      outputs = outputs['logits']
       if self.task_config.model.head.output_logits:
         outputs = tf.nn.softmax(outputs)
 
@@ -210,14 +211,14 @@ class SemanticSegmentation3DTask(base_task.Task):
 
       # For mixed_precision policy, when LossScaleOptimizer is used, loss is
       # scaled for numerical stability.
-      if isinstance(optimizer, tf.keras.mixed_precision.LossScaleOptimizer):
+      if isinstance(optimizer, tf_keras.mixed_precision.LossScaleOptimizer):
         scaled_loss = optimizer.get_scaled_loss(scaled_loss)
 
     tvars = model.trainable_variables
     grads = tape.gradient(scaled_loss, tvars)
     # Scales back gradient before apply_gradients when LossScaleOptimizer is
     # used.
-    if isinstance(optimizer, tf.keras.mixed_precision.LossScaleOptimizer):
+    if isinstance(optimizer, tf_keras.mixed_precision.LossScaleOptimizer):
       grads = optimizer.get_unscaled_gradients(grads)
     optimizer.apply_gradients(list(zip(grads, tvars)))
 
@@ -235,8 +236,8 @@ class SemanticSegmentation3DTask(base_task.Task):
   def validation_step(
       self,
       inputs,
-      model: tf.keras.Model,
-      metrics: Optional[Sequence[tf.keras.metrics.Metric]] = None
+      model: tf_keras.Model,
+      metrics: Optional[Sequence[tf_keras.metrics.Metric]] = None
   ) -> Dict[Any, Any]:
     """Validatation step.
 
@@ -258,6 +259,7 @@ class SemanticSegmentation3DTask(base_task.Task):
 
     outputs = self.inference_step(features, model)
     outputs = tf.nest.map_structure(lambda x: tf.cast(x, tf.float32), outputs)
+    outputs = outputs['logits']
     if self.task_config.model.head.output_logits:
       outputs = tf.nn.softmax(outputs)
 
@@ -268,30 +270,30 @@ class SemanticSegmentation3DTask(base_task.Task):
     # Compute dice score metrics on CPU.
     for metric in self.metrics:
       labels = tf.cast(labels, tf.float32)
-      outputs = tf.cast(outputs, tf.float32)
-      logs.update({metric.name: (labels, outputs)})
+      logits = tf.cast(outputs, tf.float32)
+      logs.update({metric.name: (labels, logits)})
 
     return logs
 
-  def inference_step(self, inputs, model: tf.keras.Model) -> tf.Tensor:
+  def inference_step(self, inputs, model: tf_keras.Model) -> tf.Tensor:
     """Performs the forward step."""
     return model(inputs, training=False)
 
   def aggregate_logs(
       self,
       state: Optional[Sequence[Union[segmentation_metrics.DiceScore,
-                                     tf.keras.metrics.Metric]]] = None,
+                                     tf_keras.metrics.Metric]]] = None,
       step_outputs: Optional[Mapping[str, Any]] = None
-  ) -> Sequence[tf.keras.metrics.Metric]:
+  ) -> Sequence[tf_keras.metrics.Metric]:
     """Aggregates statistics to compute metrics over training.
 
     Args:
-      state: A sequence of tf.keras.metrics.Metric objects. Each element records
+      state: A sequence of tf_keras.metrics.Metric objects. Each element records
         a metric.
       step_outputs: A dictionary of [metric_name, (labels, output)] from a step.
 
     Returns:
-      An updated sequence of tf.keras.metrics.Metric objects.
+      An updated sequence of tf_keras.metrics.Metric objects.
     """
     if state is None:
       for metric in self.metrics:

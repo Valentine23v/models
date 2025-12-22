@@ -1,4 +1,4 @@
-# Copyright 2021 The TensorFlow Authors. All Rights Reserved.
+# Copyright 2025 The TensorFlow Authors. All Rights Reserved.
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -13,12 +13,14 @@
 # limitations under the License.
 
 """A binary/library to export TF-NLP serving `SavedModel`."""
+import dataclasses
 import os
 from typing import Any, Dict, Text
+
 from absl import app
 from absl import flags
-import dataclasses
 import yaml
+
 from official.core import base_task
 from official.core import task_factory
 from official.modeling import hyperparams
@@ -29,6 +31,7 @@ from official.nlp.tasks import masked_lm
 from official.nlp.tasks import question_answering
 from official.nlp.tasks import sentence_prediction
 from official.nlp.tasks import tagging
+from official.nlp.tasks import translation
 
 FLAGS = flags.FLAGS
 
@@ -40,7 +43,9 @@ SERVING_MODULES = {
     question_answering.QuestionAnsweringTask:
         serving_modules.QuestionAnswering,
     tagging.TaggingTask:
-        serving_modules.Tagging
+        serving_modules.Tagging,
+    translation.TranslationTask:
+        serving_modules.Translation
 }
 
 
@@ -60,9 +65,19 @@ def define_flags():
   flags.DEFINE_string(
       "function_keys", None,
       "A string key to retrieve pre-defined serving signatures.")
+  flags.DEFINE_string(
+      "module_key", None,
+      "For multi-task case, load the export module weights from a specific "
+      "checkpoint item.")
   flags.DEFINE_bool("convert_tpu", False, "")
   flags.DEFINE_multi_integer("allowed_batch_size", None,
                              "Allowed batch sizes for batching ops.")
+  flags.DEFINE_integer("num_batch_threads", 4,
+                       "Number of threads to do TPU batching.")
+  flags.DEFINE_integer("batch_timeout_micros", 100000,
+                       "TPU batch function timeout in microseconds.")
+  flags.DEFINE_integer("max_enqueued_batches", 1000,
+                       "Max number of batches in queue for TPU batching.")
 
 
 def lookup_export_module(task: base_task.Task):
@@ -91,7 +106,7 @@ def create_export_module(*, task_name: Text, config_file: Text,
 
   @dataclasses.dataclass
   class Dummy(base_config.Config):
-    task: task_config_cls = task_config_cls()
+    task: task_config_cls = dataclasses.field(default_factory=task_config_cls)
 
   dummy_exp = Dummy()
   dummy_exp = hyperparams.override_params_dict(
@@ -116,25 +131,35 @@ def main(_):
       export_module,
       function_keys=[FLAGS.function_keys],
       checkpoint_path=FLAGS.checkpoint_path,
-      export_savedmodel_dir=FLAGS.export_savedmodel_dir)
+      export_savedmodel_dir=FLAGS.export_savedmodel_dir,
+      module_key=FLAGS.module_key)
 
   if FLAGS.convert_tpu:
     # pylint: disable=g-import-not-at-top
-    from cloud_tpu.inference_converter import converter_cli
-    from cloud_tpu.inference_converter import converter_options_pb2
+    from cloud_tpu.inference_converter_v2 import converter_options_v2_pb2
+    from cloud_tpu.inference_converter_v2.python import converter
+
     tpu_dir = os.path.join(export_dir, "tpu")
-    options = converter_options_pb2.ConverterOptions()
+    batch_options = []
     if FLAGS.allowed_batch_size is not None:
       allowed_batch_sizes = sorted(FLAGS.allowed_batch_size)
-      options.batch_options.num_batch_threads = 4
-      options.batch_options.max_batch_size = allowed_batch_sizes[-1]
-      options.batch_options.batch_timeout_micros = 100000
-      options.batch_options.allowed_batch_sizes[:] = allowed_batch_sizes
-      options.batch_options.max_enqueued_batches = 1000
-    converter_cli.ConvertSavedModel(
-        export_dir, tpu_dir, function_alias="tpu_candidate", options=options,
-        graph_rewrite_only=True)
+      batch_option = converter_options_v2_pb2.BatchOptionsV2(
+          num_batch_threads=FLAGS.num_batch_threads,
+          max_batch_size=allowed_batch_sizes[-1],
+          batch_timeout_micros=FLAGS.batch_timeout_micros,
+          allowed_batch_sizes=allowed_batch_sizes,
+          max_enqueued_batches=FLAGS.max_enqueued_batches
+      )
+      batch_options.append(batch_option)
 
+    converter_options = converter_options_v2_pb2.ConverterOptionsV2(
+        tpu_functions=[
+            converter_options_v2_pb2.TpuFunction(function_alias="tpu_candidate")
+        ],
+        batch_options=batch_options,
+    )
+
+    converter.ConvertSavedModel(export_dir, tpu_dir, converter_options)
 
 if __name__ == "__main__":
   define_flags()
