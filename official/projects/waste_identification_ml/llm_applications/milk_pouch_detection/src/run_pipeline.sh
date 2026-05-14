@@ -27,8 +27,16 @@ cd milk_pouch_project
 
 # List the image files in the GCS path.
 # NOTE: Adjust the grep pattern if other image types are expected.
+echo "=== DEBUGGING START ==="
+echo "DEBUG: gcs_path variable is: '${gcs_path}'"
+echo "DEBUG: Running 'gsutil ls \"${gcs_path}\"' to check accessibility:"
+gsutil ls "${gcs_path}" || echo "❌ gsutil ls failed"
+echo "DEBUG: Running 'gsutil ls -r \"${gcs_path}\" | head -n 10' to check content:"
+gsutil ls -r "${gcs_path}" | head -n 10 || echo "❌ gsutil recursive ls failed"
+echo "=== DEBUGGING END ==="
+
 echo "🖨️ Listing image files from GCS bucket: $gcs_path"
-mapfile -t all_gcs_files < <(gsutil ls "${gcs_path}*" | grep -iE '\.(png)$' | grep -v "/predictions/")
+mapfile -t all_gcs_files < <(gsutil ls -r "${gcs_path}" | grep -iE '\.(png|jpg|jpeg)$' | grep -v "/predictions/" | grep -v "/processed/")
 num_files=${#all_gcs_files[@]}
 
 if (( num_files == 0 )); then
@@ -73,19 +81,67 @@ for (( i=0; i<num_files; i+=batch_size )); do
 
   # Extract objects
   echo "🔎 Extracting objects from images..."
-  python3 extract_objects.py
+  if ! python3 extract_objects.py; then
+    echo "⚠️ Batch $(( i / batch_size + 1 )) failed during object extraction. Skipping to next batch."
+    continue
+  fi
 
   # Classify objects
   echo "🧠 Classifying objects..."
-  python3 classify_images.py
+  if ! python3 classify_images.py; then
+    echo "⚠️ Batch $(( i / batch_size + 1 )) failed during image classification. Skipping to next batch."
+    continue
+  fi
 
   # Move predictions back to GCS
-  if [ -d "predictions" ] && [ "$(ls -A predictions)" ]; then
+  if [ -d "predictions" ] && [ -n "$(find predictions -type f -print -quit)" ]; then
     echo "🖨️ Moving predictions for this batch back to GCS bucket: $gcs_path"
     gsutil -m cp -r predictions/ "$gcs_path"
   else
     echo "⚠️ No predictions generated for this batch."
   fi
+
+  # --- Move processed input files to 'processed/' directory preserving structure ---
+
+  # Ensure clean_gcs_path ends with / for correct substitution
+  clean_gcs_path="$gcs_path"
+  [[ "$clean_gcs_path" != */ ]] && clean_gcs_path="$clean_gcs_path/"
+
+  target_root="${clean_gcs_path}processed/"
+
+  # Group files by their destination directory to optimize gsutil calls
+  declare -a current_move_batch
+  current_move_dir=""
+
+  echo "📦 Moving processed files to ${target_root}..."
+
+  for file_url in "${current_batch[@]}"; do
+    # Get the directory of the file (e.g., gs://bucket/dev/2025-12-24/)
+    dir_url="$(dirname "$file_url")/"
+
+    # Calculate destination directory by injecting 'processed/'
+    # 1. Remove the base gcs_path from the file's dir to get the relative subdir (e.g., 2025-12-24/)
+    relative_dir="${dir_url#$clean_gcs_path}"
+    # 2. Append this relative dir to the processed root
+    dest_dir="${target_root}${relative_dir}"
+
+    # If the destination directory changes, flush the current batch
+    if [[ "$dest_dir" != "$current_move_dir" ]]; then
+      if (( ${#current_move_batch[@]} > 0 )); then
+        gsutil -m mv "${current_move_batch[@]}" "$current_move_dir"
+        current_move_batch=()
+      fi
+      current_move_dir="$dest_dir"
+    fi
+    current_move_batch+=("$file_url")
+  done
+
+  # Flush any remaining files
+  if (( ${#current_move_batch[@]} > 0 )); then
+    gsutil -m mv "${current_move_batch[@]}" "$current_move_dir"
+  fi
+
+  unset current_move_batch
 
 done
 

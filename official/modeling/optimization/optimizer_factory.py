@@ -1,4 +1,4 @@
-# Copyright 2025 The TensorFlow Authors. All Rights Reserved.
+# Copyright 2026 The TensorFlow Authors. All Rights Reserved.
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -61,6 +61,7 @@ LR_CLS = {
     'polynomial': lr_schedule.PolynomialDecayWithOffset,
     'exponential': lr_schedule.ExponentialDecayWithOffset,
     'cosine': lr_schedule.CosineDecayWithOffset,
+    'cosine_restarts': lr_schedule.CosineDecayRestartsWithOffset,
     'power': lr_schedule.DirectPowerDecay,
     'power_linear': lr_schedule.PowerAndLinearDecay,
     'power_with_offset': lr_schedule.PowerDecayWithOffset,

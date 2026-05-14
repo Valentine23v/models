@@ -1,4 +1,4 @@
-# Copyright 2025 The TensorFlow Authors. All Rights Reserved.
+# Copyright 2026 The TensorFlow Authors. All Rights Reserved.
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -29,9 +29,7 @@ from official.modeling import tf_utils
 _CHR_IDX = string.ascii_lowercase
 
 
-def _build_proj_equation(
-    free_dims: int, bound_dims: int, output_dims: int
-) -> ...:
+def _build_proj_equation(free_dims: int, bound_dims: int, output_dims: int):
   """Builds an einsum equation for projections inside attention layer.
 
   Args:
@@ -423,4 +421,3 @@ class TalkingHeadsMultiQueryAttention(MultiHeadAttention):
       )
 
     return attention_output, attention_scores
-

@@ -1,4 +1,4 @@
-# Copyright 2025 The TensorFlow Authors. All Rights Reserved.
+# Copyright 2026 The TensorFlow Authors. All Rights Reserved.
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -120,6 +120,7 @@ def get_activation(identifier, use_keras_layer=False, **kwargs):
           "hard_sigmoid": activations.hard_sigmoid,
           "mish": activations.mish,
           "gelu": functools.partial(tf.nn.gelu, **kwargs),
+          "squared_relu": activations.squared_relu,
       }
       if identifier in keras_layer_allowlist:
         return tf_keras.layers.Activation(keras_layer_allowlist[identifier])
@@ -131,6 +132,7 @@ def get_activation(identifier, use_keras_layer=False, **kwargs):
         "hard_sigmoid": activations.hard_sigmoid,
         "identity": activations.identity,
         "mish": activations.mish,
+        "squared_relu": activations.squared_relu,
     }
     if identifier in name_to_fn:
       return tf_keras.activations.get(name_to_fn[identifier])

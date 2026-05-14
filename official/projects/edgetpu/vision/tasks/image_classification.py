@@ -1,4 +1,4 @@
-# Copyright 2025 The TensorFlow Authors. All Rights Reserved.
+# Copyright 2026 The TensorFlow Authors. All Rights Reserved.
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -316,7 +316,7 @@ class EdgeTPUTask(base_task.Task):
                       inputs: Tuple[Any, Any],
                       model: tf_keras.Model,
                       metrics: Optional[List[Any]] = None):
-    """Runs validatation step.
+    """Runs validation step.
 
     Args:
       inputs: A tuple of input tensors of (features, labels).

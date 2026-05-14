@@ -1,4 +1,4 @@
-# Copyright 2025 The TensorFlow Authors. All Rights Reserved.
+# Copyright 2026 The TensorFlow Authors. All Rights Reserved.
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -219,9 +219,9 @@ def convert_groundtruths_to_coco_dataset(groundtruths, label_map=None):
   Returns:
     coco_groundtruths: the ground-truth dataset in COCO format.
   """
-  source_ids = np.concatenate(groundtruths['source_id'], axis=0)
-  heights = np.concatenate(groundtruths['height'], axis=0)
-  widths = np.concatenate(groundtruths['width'], axis=0)
+  source_ids = np.concatenate(groundtruths['source_id'], axis=0).reshape(-1)
+  heights = np.concatenate(groundtruths['height'], axis=0).reshape(-1)
+  widths = np.concatenate(groundtruths['width'], axis=0).reshape(-1)
   gt_images = [{'id': int(i), 'height': int(h), 'width': int(w)} for i, h, w
                in zip(source_ids, heights, widths)]
 
@@ -241,7 +241,7 @@ def convert_groundtruths_to_coco_dataset(groundtruths, label_map=None):
             'num_groundtruths is larger than max_num_instances, %d v.s. %d',
             num_instances, max_num_instances)
         num_instances = max_num_instances
-      for k in range(int(num_instances)):
+      for k in range(int(np.squeeze(num_instances))):
         ann = {}
         ann['image_id'] = int(groundtruths['source_id'][i][j])
         if 'is_crowds' in groundtruths:

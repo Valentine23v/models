@@ -1,4 +1,4 @@
-# Copyright 2025 The TensorFlow Authors. All Rights Reserved.
+# Copyright 2026 The TensorFlow Authors. All Rights Reserved.
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -68,12 +68,13 @@ def main(_) -> None:
 
   total_dairy_packets = 0
   for path in tqdm.tqdm(files):
-    pred_class, _ = classifier.classify(path)
+    pred_class, confidence = classifier.classify(path)
+    output_filename = f"{confidence:.2f}_{os.path.basename(path)}"
     if pred_class == "dairy":
       total_dairy_packets += 1
-      shutil.move(path, os.path.join(dairy_predictions, os.path.basename(path)))
+      shutil.move(path, os.path.join(dairy_predictions, output_filename))
     else:
-      shutil.move(path, os.path.join(other_predictions, os.path.basename(path)))
+      shutil.move(path, os.path.join(other_predictions, output_filename))
 
 if __name__ == "__main__":
   app.run(main)

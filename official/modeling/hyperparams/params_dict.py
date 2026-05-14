@@ -1,4 +1,4 @@
-# Copyright 2025 The TensorFlow Authors. All Rights Reserved.
+# Copyright 2026 The TensorFlow Authors. All Rights Reserved.
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -16,6 +16,7 @@
 
 import collections
 import copy
+import logging
 import re
 
 import six
@@ -192,6 +193,9 @@ class ParamsDict(object):
                          'To extend the existing keys, use '
                          '`override` with `is_strict` = False.'.format(k))
         else:
+          logging.warning(
+              'Adding new key `%s` to ParamsDict because is_strict=False.', k
+          )
           self._set(k, v)
       else:
         if isinstance(v, dict):
